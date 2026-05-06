@@ -6,10 +6,11 @@ Koja Core is a local Jarvis-inspired voice assistant with a neon Tkinter HUD. It
 
 - Tkinter desktop HUD (`koja_app.py`) plus a CLI/core voice loop (`koja-core.py`)
 - Voice input via `SpeechRecognition` / `PyAudio`
-- Spoken replies via local Piper TTS
+- Spoken replies via local Piper TTS with cross-platform playback helpers
 - OpenClaw bridge using session `koja-voice`
 - Local Ollama/LlamaIndex fallback context engine
 - Optional Spotify Web API controls: play, pause, resume, next, previous, status, and search/play track
+- OS-aware helpers for Linux, macOS, and Windows terminal/browser/screenshot/audio playback
 
 ## Repository layout
 
@@ -61,15 +62,24 @@ python -m pip install -r requirements.txt
 Koja expects these paths relative to the project folder when running from source:
 
 ```text
-./piper/piper
+./piper/piper                         # Linux/macOS
+./piper/piper.exe                     # Windows
 ./models/en_US-hfc_male-medium.onnx
 ./models/en_US-hfc_male-medium.onnx.json
 ```
 
-Download/provide Piper and the voice model separately, then ensure the Piper binary is executable:
+Download/provide the Piper binary for your operating system and the voice model separately.
+On Linux/macOS, ensure the Piper binary is executable:
 
 ```bash
 chmod +x ./piper/piper
+```
+
+You can override the defaults if your assets live elsewhere:
+
+```bash
+export KOJA_PIPER_PATH="/path/to/piper"
+export KOJA_MODEL_PATH="/path/to/voice.onnx"
 ```
 
 ### Optional local context
@@ -161,13 +171,25 @@ Say `go to sleep`, `exit`, or `goodbye` to stop the voice loop.
 
 ## Build an executable
 
-Install dependencies first, then run:
+PyInstaller builds are OS-specific. Build on the OS you want to release for:
+
+- Linux build: run PyInstaller on Linux → `KojaCore`
+- Windows build: run PyInstaller on Windows → `KojaCore.exe`
+- macOS build: run PyInstaller on macOS → macOS executable/app bundle style output
+
+Install dependencies first, then on Linux/macOS run:
 
 ```bash
 ./build_app.sh
 ```
 
-The PyInstaller output is created at:
+On Windows, use the same spec directly:
+
+```powershell
+python -m PyInstaller --clean --noconfirm koja_app.spec
+```
+
+The Linux/macOS PyInstaller one-folder output is created at:
 
 ```text
 ./dist/KojaCore/KojaCore
@@ -179,9 +201,11 @@ Run it with:
 ./dist/KojaCore/KojaCore
 ```
 
+On Windows, run the generated `.exe` inside `dist\KojaCore\`.
+
 ### Runtime assets for the executable
 
-The default build keeps Piper, voice models, private context, and `.env` outside the bundled app so the GitHub release stays smaller and safer. After building, place/copy assets beside the bundled Python files under `dist/KojaCore/_internal/`:
+The default build keeps Piper, voice models, private context, and `.env` outside the bundled app so the GitHub release stays smaller and safer. After building, place/copy OS-matching Piper assets beside the bundled Python files under `dist/KojaCore/_internal/`:
 
 ```bash
 cp -r piper models dist/KojaCore/_internal/
@@ -189,6 +213,8 @@ cp -r piper models dist/KojaCore/_internal/
 cp .env dist/KojaCore/_internal/        # if using Spotify .env config
 cp -r data dist/KojaCore/_internal/     # if using local private context
 ```
+
+For Windows releases, copy a Windows Piper binary as `piper/piper.exe`. For macOS/Linux releases, copy the matching `piper/piper` binary.
 
 If you prefer a heavier self-contained build, edit `koja_app.spec` and add `piper/`, `models/`, and any safe non-secret data to `datas`. Do not bundle `.env`, Spotify token caches, or private `data/` files into public release artifacts.
 

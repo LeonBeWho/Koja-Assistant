@@ -4,7 +4,11 @@
 import gc
 import json
 import os
+import platform
+import shutil
 import subprocess
+import tempfile
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -46,10 +50,20 @@ LISTEN_PHRASE_TIME_LIMIT = 30
 LISTEN_TIMEOUT = None
 AMBIENT_NOISE_DURATION = 0.8
 
-# Path to your piper executable
-PIPER_PATH = BASE_DIR / "piper" / "piper"
-# Path to your voice model (.onnx file)
-MODEL_PATH = BASE_DIR / "models" / "en_US-hfc_male-medium.onnx"
+SYSTEM = platform.system().lower()
+IS_WINDOWS = SYSTEM == "windows"
+IS_MACOS = SYSTEM == "darwin"
+IS_LINUX = SYSTEM == "linux"
+
+# Path to your piper executable. Can be overridden with KOJA_PIPER_PATH.
+def default_piper_path():
+    executable = "piper.exe" if IS_WINDOWS else "piper"
+    return BASE_DIR / "piper" / executable
+
+
+PIPER_PATH = Path(os.environ.get("KOJA_PIPER_PATH", default_piper_path()))
+# Path to your voice model (.onnx file). Can be overridden with KOJA_MODEL_PATH.
+MODEL_PATH = Path(os.environ.get("KOJA_MODEL_PATH", BASE_DIR / "models" / "en_US-hfc_male-medium.onnx"))
 
 # Spotify API configuration. Set these in your shell before running Koja:
 # export SPOTIPY_CLIENT_ID="..."
@@ -109,8 +123,47 @@ chat_engine = index.as_chat_engine(
 )
 
 
+def play_audio_file(path):
+    """Play a wav file using the host OS default simple player."""
+    if IS_MACOS and shutil.which("afplay"):
+        subprocess.run(["afplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+
+    if IS_LINUX:
+        for player in (["aplay", str(path)], ["paplay", str(path)], ["pw-play", str(path)]):
+            if shutil.which(player[0]):
+                subprocess.run(player, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+
+    if IS_WINDOWS:
+        try:
+            import winsound
+
+            winsound.PlaySound(str(path), winsound.SND_FILENAME)
+            return
+        except Exception:
+            pass
+
+    # Last resort: ask the OS to open the file in its default audio app.
+    open_path(path)
+
+
+def open_path(path):
+    """Open a local file/folder/URL in the platform default app."""
+    target = str(path)
+    try:
+        if IS_WINDOWS:
+            os.startfile(target)  # type: ignore[attr-defined]
+        elif IS_MACOS:
+            subprocess.Popen(["open", target])
+        else:
+            subprocess.Popen(["xdg-open", target])
+    except Exception as exc:
+        print(f"Could not open {target}: {exc}", flush=True)
+
+
 def speak(text):
-    """Send text to Piper and play it through aplay."""
+    """Send text to Piper and play it cross-platform."""
     text = str(text).strip()
     if not text:
         return
@@ -118,31 +171,32 @@ def speak(text):
     print(f"Koja: {text}", flush=True)
 
     try:
-        piper = subprocess.Popen(
-            [str(PIPER_PATH), "--model", str(MODEL_PATH), "--output_raw", "--quiet"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        aplay = subprocess.Popen(
-            ["aplay", "-r", "22050", "-f", "S16_LE", "-t", "raw"],
-            stdin=piper.stdout,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if not PIPER_PATH.exists():
+            raise FileNotFoundError(f"Piper executable not found at {PIPER_PATH}")
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(f"Piper voice model not found at {MODEL_PATH}")
 
-        if piper.stdin:
-            piper.stdin.write(text)
-            piper.stdin.close()
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
+            wav_path = Path(wav_file.name)
 
-        if piper.stdout:
-            piper.stdout.close()
+        try:
+            subprocess.run(
+                [str(PIPER_PATH), "--model", str(MODEL_PATH), "--output_file", str(wav_path), "--quiet"],
+                input=text,
+                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            play_audio_file(wav_path)
+        finally:
+            try:
+                wav_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
-        aplay.wait()
-        piper.wait()
     except FileNotFoundError as exc:
-        print(f"TTS playback failed; missing executable: {exc}", flush=True)
+        print(f"TTS playback failed; missing file: {exc}", flush=True)
     except Exception as exc:
         print(f"TTS playback failed: {exc}", flush=True)
 
@@ -250,7 +304,7 @@ def execute_spotify_command(command_text):
         # Fallback: at least open Spotify if API credentials are not ready yet.
         if "play music" in cmd or "open spotify" in cmd or cmd == "spotify":
             speak("Opening Spotify. The API is not configured yet, so I can only launch it for now.")
-            subprocess.Popen(["spotify"])
+            launch_spotify_app()
         else:
             speak(spotify_ready_message())
         return True
@@ -316,6 +370,88 @@ def execute_spotify_command(command_text):
         return True
 
 
+# --- CROSS-PLATFORM SYSTEM HELPERS ---
+def launch_terminal():
+    """Open a terminal on Linux, macOS, or Windows."""
+    if IS_WINDOWS:
+        subprocess.Popen(["cmd.exe"])
+        return
+    if IS_MACOS:
+        subprocess.Popen(["open", "-a", "Terminal"])
+        return
+
+    for terminal in ("kitty", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"):
+        if shutil.which(terminal):
+            subprocess.Popen([terminal])
+            return
+    raise RuntimeError("No supported terminal emulator found")
+
+
+def launch_browser():
+    """Open the default browser cross-platform."""
+    webbrowser.open("https://www.google.com")
+
+
+def launch_spotify_app():
+    """Open Spotify if installed; otherwise fall back to the web player."""
+    if IS_WINDOWS:
+        try:
+            os.startfile("spotify:")  # type: ignore[attr-defined]
+            return
+        except Exception:
+            pass
+    elif IS_MACOS:
+        try:
+            subprocess.Popen(["open", "-a", "Spotify"])
+            return
+        except Exception:
+            pass
+    else:
+        for command in (["spotify"], ["flatpak", "run", "com.spotify.Client"]):
+            if shutil.which(command[0]):
+                subprocess.Popen(command)
+                return
+
+    webbrowser.open("https://open.spotify.com")
+
+
+def take_screenshot(path):
+    """Take a screenshot where possible. Returns True if captured."""
+    path = Path(path)
+
+    if IS_MACOS and shutil.which("screencapture"):
+        subprocess.run(["screencapture", str(path)], check=True)
+        return True
+
+    if IS_LINUX:
+        commands = [
+            ["gnome-screenshot", "-f", str(path)],
+            ["spectacle", "-b", "-n", "-o", str(path)],
+            ["scrot", str(path)],
+        ]
+        for command in commands:
+            if shutil.which(command[0]):
+                subprocess.run(command, check=True)
+                return True
+
+    if IS_WINDOWS:
+        try:
+            from PIL import ImageGrab
+
+            image = ImageGrab.grab()
+            image.save(path)
+            return True
+        except Exception:
+            pass
+
+    return False
+
+
+def system_summary():
+    """Return a short cross-platform system summary."""
+    return f"{platform.system()} {platform.release()} on {platform.machine()}"
+
+
 # --- THE HANDS ---
 def execute_command(command_text):
     """Map voice commands to system actions. Returns True if handled."""
@@ -326,17 +462,24 @@ def execute_command(command_text):
 
     if "open terminal" in cmd:
         speak("Opening terminal.")
-        subprocess.Popen(["kitty"])
+        try:
+            launch_terminal()
+        except Exception as exc:
+            speak(f"I couldn't open a terminal: {exc}")
         return True
 
     if "open browser" in cmd:
         speak("Opening web browser.")
-        subprocess.Popen(["flatpak", "run", "com.opera.GX"])
+        launch_browser()
         return True
 
     if "take a screenshot" in cmd:
+        screenshot_path = BASE_DIR / "koja_snap.png"
         speak("Taking a screenshot.")
-        subprocess.run(["gnome-screenshot", "-f", str(BASE_DIR / "koja_snap.png")])
+        if take_screenshot(screenshot_path):
+            speak(f"Screenshot saved to {screenshot_path.name}.")
+        else:
+            speak("I couldn't take a screenshot on this operating system yet.")
         return True
 
     if "what's the time" in cmd or "what is the time" in cmd:
@@ -351,8 +494,7 @@ def execute_command(command_text):
 
     if "how is my system" in cmd or "how is my computer" in cmd:
         speak("Checking system status.")
-        res = subprocess.check_output(["hostnamectl"]).decode("utf-8").split("\n")[0]
-        speak(f"System status: {res}")
+        speak(f"System status: {system_summary()}")
         return True
 
     return False
