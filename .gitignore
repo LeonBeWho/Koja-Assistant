@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets / local auth
+.env
+.spotify-token-cache
+.spotify-token-cache.*
+.cache/
+
+# Local generated files
+*.wav
+koja_snap.png
+akira_snap.png
+build/
+dist/
+*.spec.bak
+
+# Backups / experiments
+*.bak
+*.bak-*
+Akira-core.py*
+
+# Large local runtime assets - download/provide separately
+piper/
+models/
+*.onnx
+*.onnx.json
+*.ort
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local private retrieval/context data
+data/
+!data.example/
