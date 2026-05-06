@@ -28,6 +28,7 @@ class KojaApp(tk.Tk):
         self.configure(bg="#050b14")
 
         self.core = None
+        self.user_name = "User"
         self.core_lock = threading.Lock()
         self.listening = False
         self.worker = None
@@ -189,6 +190,7 @@ class KojaApp(tk.Tk):
 
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
+            self.user_name = getattr(module, "USER_NAME", "User") or "User"
             self.core = module
             return module
 
@@ -236,10 +238,10 @@ class KojaApp(tk.Tk):
             if not query:
                 continue
 
-            self.ui_queue.put(("log", ("L", query)))
+            self.ui_queue.put(("log", (self.user_name, query)))
 
             if any(phrase in query for phrase in ("go to sleep", "exit", "goodbye")):
-                core.speak("Understood. Powering down. Goodbye, L.")
+                core.speak(f"Understood. Powering down. Goodbye, {self.user_name}.")
                 self.listening = False
                 break
 
@@ -260,7 +262,7 @@ class KojaApp(tk.Tk):
         if not text:
             return
         self.entry.delete("1.0", "end")
-        self.log("L", text)
+        self.log(self.user_name, text)
 
         def job():
             try:

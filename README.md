@@ -82,6 +82,20 @@ export KOJA_PIPER_PATH="/path/to/piper"
 export KOJA_MODEL_PATH="/path/to/voice.onnx"
 ```
 
+### Personalise Koja
+
+Copy `.env.example` to `.env` and set your preferred name:
+
+```bash
+cp .env.example .env
+```
+
+```text
+KOJA_USER_NAME="your name"
+```
+
+If unset, Koja uses `friend` so public builds are not tied to one person.
+
 ### Optional local context
 
 If you want local retrieval/context notes, copy the example folder and add your own files:
@@ -228,7 +242,7 @@ git status --short
 
 Do not commit:
 
-- `.env` or real Spotify credentials
+- `.env` or real Spotify credentials/personal local names
 - `.spotify-token-cache*`
 - private `data/` notes
 - local OpenClaw workspace files

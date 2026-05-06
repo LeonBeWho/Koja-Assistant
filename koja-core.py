@@ -70,6 +70,7 @@ MODEL_PATH = Path(os.environ.get("KOJA_MODEL_PATH", BASE_DIR / "models" / "en_US
 # export SPOTIPY_CLIENT_SECRET="..."
 # export SPOTIPY_REDIRECT_URI="http://127.0.0.1:8888/callback"
 SPOTIFY_SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
+USER_NAME = os.environ.get("KOJA_USER_NAME", "friend").strip() or "friend"
 
 
 def load_koja_context():
@@ -93,10 +94,10 @@ def load_koja_context():
 
 KOJA_CONTEXT = load_koja_context()
 SYSTEM_PROMPT = f"""
-You are Koja, L's local voice assistant.
+You are Koja, {USER_NAME}'s local voice assistant.
 You are warm, capable, concise, and quietly supportive.
 You speak naturally, not like a corporate chatbot.
-Keep spoken answers brief unless L asks for detail.
+Keep spoken answers brief unless {USER_NAME} asks for detail.
 If you do not know something, say so plainly.
 
 Local persona notes:
@@ -563,7 +564,7 @@ def ask_koja(query):
 
 # --- MAIN LOOP ---
 if __name__ == "__main__":
-    speak("Systems initialized. I am Koja. How can I help, L?")
+    speak(f"Systems initialized. I am Koja. How can I help, {USER_NAME}?")
 
     while True:
         query = listen()
@@ -572,7 +573,7 @@ if __name__ == "__main__":
             continue
 
         if "go to sleep" in query or "exit" in query or "goodbye" in query:
-            speak("Understood. Powering down. Goodbye, L.")
+            speak(f"Understood. Powering down. Goodbye, {USER_NAME}.")
             break
 
         if execute_command(query):
